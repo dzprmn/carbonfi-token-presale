@@ -11,10 +11,25 @@ export const usePresaleContract = () => {
     const [isInitialized, setIsInitialized] = useState(false);
     const initializationAttempts = useRef(0);
 
+    const getEthereumProvider = useCallback(() => {
+        if (typeof window !== 'undefined' && window.ethereum) {
+            return window.ethereum;
+        }
+        return null;
+    }, []);
+
     const initializeContract = useCallback(async () => {
         console.log("Initializing provider and contract...");
         try {
-            const newProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
+            let newProvider;
+            const ethereumProvider = getEthereumProvider();
+
+            if (ethereumProvider) {
+                newProvider = new ethers.providers.Web3Provider(ethereumProvider);
+            } else {
+                newProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
+            }
+
             await newProvider.ready;
             setProvider(newProvider);
 
@@ -33,7 +48,7 @@ export const usePresaleContract = () => {
                 console.error("Failed to initialize contract after 3 attempts.");
             }
         }
-    }, []);
+    }, [getEthereumProvider]);
 
     useEffect(() => {
         initializeContract();
@@ -175,8 +190,9 @@ export const usePresaleContract = () => {
     }, [provider]);
 
     const contribute = useCallback(async (amount: string) => {
-        if (typeof window.ethereum === 'undefined') {
-            throw new Error("Ethereum object not found, please install MetaMask.");
+        const ethereumProvider = getEthereumProvider();
+        if (!ethereumProvider) {
+            throw new Error("No Ethereum wallet detected. Please use a Web3-enabled browser or wallet app.");
         }
 
         if (!(await isCorrectNetwork())) {
@@ -184,7 +200,7 @@ export const usePresaleContract = () => {
         }
 
         try {
-            const userProvider = new ethers.providers.Web3Provider(window.ethereum);
+            const userProvider = new ethers.providers.Web3Provider(ethereumProvider);
 
             // Request account access if needed
             await userProvider.send("eth_requestAccounts", []);
@@ -216,7 +232,7 @@ export const usePresaleContract = () => {
             }
             throw error;
         }
-    }, [contract, isCorrectNetwork]);
+    }, [contract, isCorrectNetwork, getEthereumProvider]);
 
     const getUserContribution = useCallback(async (userAddress: string): Promise<string> => {
         if (!contract) throw new Error("Contract not initialized");
