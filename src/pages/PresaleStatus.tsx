@@ -75,7 +75,7 @@ const PresaleStatus: React.FC = () => {
 
         if (isInitialized) {
             fetchPresaleInfo();
-            const interval = setInterval(fetchPresaleInfo, 60000); // Refresh every minute
+            const interval = setInterval(fetchPresaleInfo, 300000); // Refresh every 5 minutes
             return () => clearInterval(interval);
         }
     }, [getPresaleInfo, getPresaleStatus, isInitialized]);

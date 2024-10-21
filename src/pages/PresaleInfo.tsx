@@ -48,8 +48,8 @@ const PresaleInfo: React.FC = () => {
         };
 
         fetchData();
-        // Set up an interval to refresh data every minute
-        const interval = setInterval(fetchData, 60000);
+        // Set up an interval to refresh data every 5 minutes
+        const interval = setInterval(fetchData, 300000);
         return () => clearInterval(interval);
     }, [getPresaleInfo, getTokensSold, getSoftCapReached, getTotalRaised, isInitialized]);
 
