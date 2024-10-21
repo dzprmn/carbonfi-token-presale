@@ -120,13 +120,6 @@ const PresaleForm: React.FC = () => {
         setLoading(true);
         setError('');
         try {
-            if (!(await isCorrectNetwork())) {
-                const switched = await switchToCorrectNetwork();
-                if (!switched) {
-                    throw new Error("Please switch to the correct network to contribute");
-                }
-            }
-
             if (!bnbAmount || isNaN(parseFloat(bnbAmount))) {
                 throw new Error("Please enter a valid BNB amount.");
             }
@@ -150,7 +143,11 @@ const PresaleForm: React.FC = () => {
             await fetchUserContribution();
         } catch (error) {
             console.error("Error contributing:", error);
-            setError((error as Error).message || "Failed to contribute. Please try again.");
+            if (error instanceof Error) {
+                setError(error.message);
+            } else {
+                setError("An unexpected error occurred. Please try again.");
+            }
         } finally {
             setLoading(false);
         }

@@ -175,27 +175,46 @@ export const usePresaleContract = () => {
     }, [provider]);
 
     const contribute = useCallback(async (amount: string) => {
+        if (typeof window.ethereum === 'undefined') {
+            throw new Error("Ethereum object not found, please install MetaMask.");
+        }
+
         if (!(await isCorrectNetwork())) {
             throw new Error("Please switch to the correct network to contribute");
         }
 
-        if (typeof window.ethereum !== 'undefined') {
-            try {
-                const userProvider = new ethers.providers.Web3Provider(window.ethereum);
-                const signer = await userProvider.getSigner();
-                const contractWithSigner = contract?.connect(signer);
+        try {
+            const userProvider = new ethers.providers.Web3Provider(window.ethereum);
 
-                if (contractWithSigner) {
-                    const tx = await contractWithSigner.contribute({ value: ethers.utils.parseEther(amount) });
-                    await tx.wait();
-                    return true;
-                }
-            } catch (error) {
-                console.error("Error contributing:", error);
-                throw error;
+            // Request account access if needed
+            await userProvider.send("eth_requestAccounts", []);
+
+            const signer = await userProvider.getSigner();
+            const address = await signer.getAddress();
+
+            if (!address) {
+                throw new Error("No account found. Please connect your wallet.");
             }
-        } else {
-            throw new Error("Ethereum object not found, install MetaMask.");
+
+            const contractWithSigner = contract?.connect(signer);
+
+            if (!contractWithSigner) {
+                throw new Error("Contract not initialized properly.");
+            }
+
+            const tx = await contractWithSigner.contribute({ value: ethers.utils.parseEther(amount) });
+            await tx.wait();
+            return true;
+        } catch (error) {
+            console.error("Error contributing:", error);
+            if (error instanceof Error) {
+                if (error.message.includes("user rejected transaction")) {
+                    throw new Error("Transaction was rejected by the user.");
+                } else if (error.message.includes("insufficient funds")) {
+                    throw new Error("Insufficient funds for this transaction.");
+                }
+            }
+            throw error;
         }
     }, [contract, isCorrectNetwork]);
 
