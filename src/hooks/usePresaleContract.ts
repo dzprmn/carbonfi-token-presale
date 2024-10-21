@@ -5,11 +5,21 @@ import { CONTRACT_ADDRESS } from '../constants/contractConfig';
 
 const RPC_URL = "https://bsc-testnet-rpc.publicnode.com"; // BSC Testnet RPC URL
 
+declare global {
+    interface Window {
+        ethereum?: any;
+    }
+}
+
 export const usePresaleContract = () => {
     const [provider, setProvider] = useState<ethers.providers.JsonRpcProvider | null>(null);
     const [contract, setContract] = useState<ethers.Contract | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const initializationAttempts = useRef(0);
+
+    const isMobileBrowser = useCallback(() => {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }, []);
 
     const getEthereumProvider = useCallback(() => {
         if (typeof window !== 'undefined' && window.ethereum) {
@@ -192,7 +202,11 @@ export const usePresaleContract = () => {
     const contribute = useCallback(async (amount: string) => {
         const ethereumProvider = getEthereumProvider();
         if (!ethereumProvider) {
-            throw new Error("No Ethereum wallet detected. Please use a Web3-enabled browser or wallet app.");
+            if (isMobileBrowser()) {
+                throw new Error("Please use your wallet app's built-in browser to access this page.");
+            } else {
+                throw new Error("No Ethereum wallet detected. Please install MetaMask or use a Web3-enabled browser.");
+            }
         }
 
         if (!(await isCorrectNetwork())) {
@@ -232,7 +246,7 @@ export const usePresaleContract = () => {
             }
             throw error;
         }
-    }, [contract, isCorrectNetwork, getEthereumProvider]);
+    }, [contract, isCorrectNetwork, getEthereumProvider, isMobileBrowser]);
 
     const getUserContribution = useCallback(async (userAddress: string): Promise<string> => {
         if (!contract) throw new Error("Contract not initialized");
