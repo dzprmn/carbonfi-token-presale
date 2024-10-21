@@ -29,32 +29,44 @@ const PresaleStatus: React.FC = () => {
     useEffect(() => {
         const fetchPresaleInfo = async () => {
             if (!isInitialized) {
-                console.log("Contract is not yet initialized. Waiting...");
+                if (process.env.NODE_ENV === 'development') {
+                    console.log("Contract is not yet initialized. Waiting...");
+                }
                 return;
             }
             try {
                 setIsLoading(true);
-                console.log("Fetching presale info...");
+                if (process.env.NODE_ENV === 'development') {
+                    console.log("Fetching presale info...");
+                }
                 const info = await getPresaleInfo();
-                console.log("Received presale info:", info);
-
                 const status = await getPresaleStatus();
-                console.log("Received presale status:", status);
+
+                if (process.env.NODE_ENV === 'development') {
+                    console.log("Received presale info:", info);
+                    console.log("Received presale status:", status);
+                }
 
                 if (info && info.startTime && info.endTime) {
                     setPresaleInfo({
                         startTime: info.startTime,
                         endTime: info.endTime
                     });
-                    console.log("Set presale info:", { startTime: info.startTime, endTime: info.endTime });
+                    if (process.env.NODE_ENV === 'development') {
+                        console.log("Set presale info:", { startTime: info.startTime, endTime: info.endTime });
+                    }
                 } else {
-                    console.error("Invalid presale info received:", info);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error("Invalid presale info received:", info);
+                    }
                     setError("Failed to fetch presale times. Received invalid data.");
                 }
 
                 setPresaleStatus(status);
             } catch (error) {
-                console.error("Failed to fetch presale info:", error);
+                if (process.env.NODE_ENV === 'development') {
+                    console.error("Failed to fetch presale info:", error);
+                }
                 setError(`Failed to fetch presale information: ${(error as Error).message}`);
             } finally {
                 setIsLoading(false);

@@ -15,12 +15,11 @@ import './styles/global.css';
 
 const projectId = '2e21daf14b1f09f22caf8b57a1982449'; // Replace with your actual project ID
 const appName = 'CarbonFi Presale';
-const chains = [bscTestnet];
+const chains = [bscTestnet] as const;
 
 const { wallets } = getDefaultWallets({
     appName,
     projectId,
-    chains,
 });
 
 const connectors = connectorsForWallets([
@@ -40,6 +39,20 @@ const wagmiConfig = createConfig({
 
 const queryClient = new QueryClient();
 
+const App: React.FC = () => {
+    return (
+        <WagmiProvider config={wagmiConfig}>
+            <QueryClientProvider client={queryClient}>
+                <RainbowKitProvider>
+                    <Router>
+                        <AppContent />
+                    </Router>
+                </RainbowKitProvider>
+            </QueryClientProvider>
+        </WagmiProvider>
+    );
+};
+
 function AppContent() {
     useReconnect();
 
@@ -56,19 +69,5 @@ function AppContent() {
         </div>
     );
 }
-
-const App: React.FC = () => {
-    return (
-        <WagmiProvider config={wagmiConfig}>
-            <QueryClientProvider client={queryClient}>
-                <RainbowKitProvider chains={chains}>
-                    <Router>
-                        <AppContent />
-                    </Router>
-                </RainbowKitProvider>
-            </QueryClientProvider>
-        </WagmiProvider>
-    );
-};
 
 export default App;
