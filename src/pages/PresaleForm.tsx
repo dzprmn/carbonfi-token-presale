@@ -26,7 +26,9 @@ const PresaleForm: React.FC = () => {
         switchToCorrectNetwork,
         getUserContribution,
         contribute,
-        isInitialized
+        isInitialized,
+        isMobileBrowser,
+        openWalletSelector  // Add this to the destructured values
     } = usePresaleContract();
 
     const [bnbAmount, setBnbAmount] = useState<string>('');
@@ -38,6 +40,7 @@ const PresaleForm: React.FC = () => {
     const [tokensSold, setTokensSold] = useState<string>('0');
     const [userContribution, setUserContribution] = useState<string>('0');
     const [userTokenAllocation, setUserTokenAllocation] = useState<string>('0');
+    const [showWalletOptions, setShowWalletOptions] = useState(false);
 
     useEffect(() => {
         if (isInitialized) {
@@ -123,24 +126,21 @@ const PresaleForm: React.FC = () => {
             if (!bnbAmount || isNaN(parseFloat(bnbAmount))) {
                 throw new Error("Please enter a valid BNB amount.");
             }
-            if (parseFloat(bnbAmount) < parseFloat(presaleInfo.minContribution) || parseFloat(bnbAmount) > parseFloat(presaleInfo.maxContribution)) {
-                throw new Error(`Contribution amount must be between ${presaleInfo.minContribution} and ${presaleInfo.maxContribution} BNB`);
-            }
-            if (presaleStatus !== "Active") {
-                throw new Error(`Presale is not active. Current status: ${presaleStatus}`);
+
+            const result = await contribute(bnbAmount);
+
+            if (result?.needsWallet) {
+                setShowWalletOptions(true);
+                return;
             }
 
-            const remainingTokens = parseFloat(presaleInfo.hardCap) - parseFloat(tokensSold);
-            if (parseFloat(cafiAmount) > remainingTokens) {
-                throw new Error(`Contribution would exceed hard cap. Maximum contribution allowed: ${remainingTokens.toFixed(2)} CAFI`);
+            if (result?.success) {
+                alert('Contribution successful!');
+                setBnbAmount('');
+                setCafiAmount('');
+                await fetchPresaleInfo();
+                await fetchUserContribution();
             }
-
-            await contribute(bnbAmount);
-            alert('Contribution successful!');
-            setBnbAmount('');
-            setCafiAmount('');
-            await fetchPresaleInfo();
-            await fetchUserContribution();
         } catch (error) {
             console.error("Error contributing:", error);
             if (error instanceof Error) {
@@ -157,10 +157,51 @@ const PresaleForm: React.FC = () => {
 
     if (!isInitialized) return <div className="p-6 text-center">Initializing contract...</div>;
 
+    const WalletOptions = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-80">
+                <h3 className="text-xl font-bold mb-4 text-gray-800">Connect Wallet</h3>
+                <div className="space-y-3">
+                    <button
+                        onClick={() => {
+                            const walletSelector = openWalletSelector();
+                            walletSelector.metamask();
+                            setShowWalletOptions(false);
+                        }}
+                        className="w-full py-2 px-4 rounded bg-orange-500 text-white hover:bg-orange-600"
+                    >
+                        MetaMask
+                    </button>
+                    <button
+                        onClick={() => {
+                            const walletSelector = openWalletSelector();
+                            walletSelector.trustwallet();
+                            setShowWalletOptions(false);
+                        }}
+                        className="w-full py-2 px-4 rounded bg-blue-500 text-white hover:bg-blue-600"
+                    >
+                        Trust Wallet
+                    </button>
+                </div>
+                <button
+                    onClick={() => setShowWalletOptions(false)}
+                    className="mt-4 w-full py-2 px-4 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
+                >
+                    Cancel
+                </button>
+            </div>
+        </div>
+    );
+
     return (
         <div className="p-6">
             <h2 className="text-2xl font-bold mb-6 text-center text-green-400">Contribute to Presale</h2>
-            {error && <p className="text-red-400 mb-4 text-center">{error}</p>}
+            {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+                    <strong className="font-bold">Error: </strong>
+                    <span className="block sm:inline">{error}</span>
+                </div>
+            )}
 
             <div className="mb-4">
                 <label htmlFor="bnb-amount" className="block text-sm font-medium text-gray-400 mb-1">BNB Amount</label>
@@ -219,6 +260,7 @@ const PresaleForm: React.FC = () => {
                     <InfoItem label="Tokens Sold" value={`${tokensSold} / ${presaleInfo.hardCap} CAFI`} />
                 </div>
             )}
+            {showWalletOptions && <WalletOptions />}
         </div>
     );
 };

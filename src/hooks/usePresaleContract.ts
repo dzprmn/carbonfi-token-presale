@@ -11,10 +11,17 @@ declare global {
     }
 }
 
+const DEEP_LINKS = {
+    metamask: 'https://metamask.app.link/dapp/',
+    trustwallet: 'https://link.trustwallet.com/open_url?url=',
+    // Add more wallet deep links as needed
+};
+
 export const usePresaleContract = () => {
     const [provider, setProvider] = useState<ethers.providers.JsonRpcProvider | null>(null);
     const [contract, setContract] = useState<ethers.Contract | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [walletConnected, setWalletConnected] = useState(false);
     const initializationAttempts = useRef(0);
 
     const isMobileBrowser = useCallback(() => {
@@ -36,6 +43,7 @@ export const usePresaleContract = () => {
 
             if (ethereumProvider) {
                 newProvider = new ethers.providers.Web3Provider(ethereumProvider);
+                setWalletConnected(true);
             } else {
                 newProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
             }
@@ -52,13 +60,20 @@ export const usePresaleContract = () => {
             console.error("Error initializing contract:", error);
             initializationAttempts.current += 1;
             if (initializationAttempts.current < 3) {
-                console.log(`Retrying initialization (Attempt ${initializationAttempts.current + 1})...`);
-                setTimeout(initializeContract, 1000); // Retry after 1 second
-            } else {
-                console.error("Failed to initialize contract after 3 attempts.");
+                setTimeout(initializeContract, 1000);
             }
         }
     }, [getEthereumProvider]);
+
+    const openWalletSelector = useCallback(() => {
+        const currentUrl = window.location.href;
+        // Create a list of wallet options with deep links
+        return {
+            metamask: () => window.open(DEEP_LINKS.metamask + currentUrl),
+            trustwallet: () => window.open(DEEP_LINKS.trustwallet + currentUrl),
+            // Add more wallet options as needed
+        };
+    }, []);
 
     useEffect(() => {
         initializeContract();
@@ -201,22 +216,21 @@ export const usePresaleContract = () => {
 
     const contribute = useCallback(async (amount: string) => {
         const ethereumProvider = getEthereumProvider();
+
         if (!ethereumProvider) {
             if (isMobileBrowser()) {
-                throw new Error("Please use your wallet app's built-in browser to access this page.");
+                // Instead of throwing an error, return object indicating wallet selection is needed
+                return {
+                    needsWallet: true,
+                    walletSelector: openWalletSelector()
+                };
             } else {
                 throw new Error("No Ethereum wallet detected. Please install MetaMask or use a Web3-enabled browser.");
             }
         }
 
-        if (!(await isCorrectNetwork())) {
-            throw new Error("Please switch to the correct network to contribute");
-        }
-
         try {
             const userProvider = new ethers.providers.Web3Provider(ethereumProvider);
-
-            // Request account access if needed
             await userProvider.send("eth_requestAccounts", []);
 
             const signer = await userProvider.getSigner();
@@ -226,27 +240,27 @@ export const usePresaleContract = () => {
                 throw new Error("No account found. Please connect your wallet.");
             }
 
-            const contractWithSigner = contract?.connect(signer);
+            // Check network and switch if needed
+            if (!(await isCorrectNetwork())) {
+                await switchToCorrectNetwork();
+            }
 
+            const contractWithSigner = contract?.connect(signer);
             if (!contractWithSigner) {
                 throw new Error("Contract not initialized properly.");
             }
 
-            const tx = await contractWithSigner.contribute({ value: ethers.utils.parseEther(amount) });
+            const tx = await contractWithSigner.contribute({
+                value: ethers.utils.parseEther(amount),
+                gasLimit: 300000 // Add explicit gas limit for mobile wallets
+            });
             await tx.wait();
-            return true;
+            return { success: true };
         } catch (error) {
             console.error("Error contributing:", error);
-            if (error instanceof Error) {
-                if (error.message.includes("user rejected transaction")) {
-                    throw new Error("Transaction was rejected by the user.");
-                } else if (error.message.includes("insufficient funds")) {
-                    throw new Error("Insufficient funds for this transaction.");
-                }
-            }
             throw error;
         }
-    }, [contract, isCorrectNetwork, getEthereumProvider, isMobileBrowser]);
+    }, [contract, isCorrectNetwork, switchToCorrectNetwork, getEthereumProvider, isMobileBrowser, openWalletSelector]);
 
     const getUserContribution = useCallback(async (userAddress: string): Promise<string> => {
         if (!contract) throw new Error("Contract not initialized");
@@ -301,10 +315,9 @@ export const usePresaleContract = () => {
         contribute,
         getUserContribution,
         isInitialized,
-        canClaimTokens,
-        canWithdraw,
-        claimTokens,
-        withdrawContribution,
+        walletConnected,
+        isMobileBrowser,
+        openWalletSelector,
         // Include other functions here...
     };
 };
