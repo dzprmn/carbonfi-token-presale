@@ -319,6 +319,7 @@ export const usePresaleContract = () => {
         canWithdraw,
         claimTokens,
         withdrawContribution,
+        isMobileBrowser,
         openWalletSelector,
         // Include other functions here...
     };
