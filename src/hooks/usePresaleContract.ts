@@ -315,8 +315,10 @@ export const usePresaleContract = () => {
         contribute,
         getUserContribution,
         isInitialized,
-        walletConnected,
-        isMobileBrowser,
+        canClaimTokens,
+        canWithdraw,
+        claimTokens,
+        withdrawContribution,
         openWalletSelector,
         // Include other functions here...
     };
