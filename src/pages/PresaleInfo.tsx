@@ -1,10 +1,19 @@
 import React from 'react';
 import { usePresaleContract } from '../hooks/usePresaleContract';
+import { logger } from '../utils/logger';
 
 interface InfoItemProps {
     label: string;
     value: string | number;
     valueColor?: string;
+}
+
+interface PresaleInfoData {
+    softCap: string;
+    hardCap: string;
+    tokenPrice: string;
+    minContribution: string;
+    maxContribution: string;
 }
 
 const InfoItem: React.FC<InfoItemProps> = ({ label, value, valueColor = 'text-white' }) => {
@@ -18,49 +27,110 @@ const InfoItem: React.FC<InfoItemProps> = ({ label, value, valueColor = 'text-wh
 
 const PresaleInfo: React.FC = () => {
     const { getPresaleInfo, getTokensSold, getSoftCapReached, getTotalRaised, isInitialized } = usePresaleContract();
-    const [presaleInfo, setPresaleInfo] = React.useState<any>(null);
+    const [presaleInfo, setPresaleInfo] = React.useState<PresaleInfoData | null>(null);
     const [tokensSold, setTokensSold] = React.useState<string>('0');
     const [softCapReached, setSoftCapReached] = React.useState<boolean>(false);
     const [totalRaised, setTotalRaised] = React.useState<string>('0');
     const [loading, setLoading] = React.useState<boolean>(true);
     const [error, setError] = React.useState<string | null>(null);
+    const [retryCount, setRetryCount] = React.useState<number>(0);
 
     React.useEffect(() => {
         const fetchData = async () => {
-            if (!isInitialized) return;
+            if (!isInitialized) {
+                logger.log("Contract not yet initialized, skipping fetch");
+                return;
+            }
+
             try {
                 setLoading(true);
-                const info = await getPresaleInfo();
-                const sold = await getTokensSold();
-                const softCap = await getSoftCapReached();
-                const raised = await getTotalRaised();
+                logger.log("Fetching presale data...");
+
+                const [info, sold, softCap, raised] = await Promise.all([
+                    getPresaleInfo(),
+                    getTokensSold(),
+                    getSoftCapReached(),
+                    getTotalRaised()
+                ]);
+
+                if (!info) {
+                    throw new Error("Failed to fetch presale information");
+                }
+
+                logger.log("Presale data received:", {
+                    tokensSold: sold,
+                    softCapReached: softCap,
+                    totalRaised: raised
+                });
 
                 setPresaleInfo(info);
                 setTokensSold(sold);
                 setSoftCapReached(softCap);
                 setTotalRaised(raised);
                 setError(null);
+                setRetryCount(0); // Reset retry count on successful fetch
+
             } catch (err) {
-                setError((err as Error).message || 'An error occurred while fetching presale data');
+                logger.error("Error fetching presale data:", err);
+                setError("Unable to load presale information. Please try again.");
+
+                // Implement retry logic
+                if (retryCount < 3) {
+                    const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff
+                    setTimeout(() => {
+                        setRetryCount(prev => prev + 1);
+                        fetchData();
+                    }, retryDelay);
+                }
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-        // Set up an interval to refresh data every 5 minutes
-        const interval = setInterval(fetchData, 300000);
+        // Set up an interval to refresh data
+        const interval = setInterval(fetchData, 300000); // 5 minutes
         return () => clearInterval(interval);
-    }, [getPresaleInfo, getTokensSold, getSoftCapReached, getTotalRaised, isInitialized]);
+    }, [getPresaleInfo, getTokensSold, getSoftCapReached, getTotalRaised, isInitialized, retryCount]);
 
-    if (!isInitialized) return <div className="p-6 text-center">Initializing contract...</div>;
-    if (loading) return <div className="p-6 text-center">Loading presale information...</div>;
-    if (error) return <div className="p-6 text-center text-red-500">{error}</div>;
-    if (!presaleInfo) return <div className="p-6 text-center">No presale information available.</div>;
+    const calculateProgress = React.useCallback((): number => {
+        try {
+            if (!presaleInfo?.hardCap || !tokensSold) return 0;
+            const progress = (parseFloat(tokensSold) / parseFloat(presaleInfo.hardCap)) * 100;
+            return Math.min(progress, 100); // Ensure progress doesn't exceed 100%
+        } catch (error) {
+            logger.error("Error calculating progress:", error);
+            return 0;
+        }
+    }, [presaleInfo, tokensSold]);
 
-    const calculateProgress = () => {
-        return (parseFloat(tokensSold) / parseFloat(presaleInfo.hardCap)) * 100;
-    };
+    if (!isInitialized) {
+        return <div className="p-6 text-center">Initializing presale information...</div>;
+    }
+
+    if (loading && !presaleInfo) {
+        return <div className="p-6 text-center">Loading presale information...</div>;
+    }
+
+    if (error) {
+        return (
+            <div className="p-6 text-center">
+                <div className="text-red-500 mb-4">{error}</div>
+                <button
+                    onClick={() => setRetryCount(0)} // This will trigger a new fetch
+                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark"
+                >
+                    Retry
+                </button>
+            </div>
+        );
+    }
+
+    if (!presaleInfo) {
+        return <div className="p-6 text-center">No presale information available.</div>;
+    }
+
+    const progress = calculateProgress();
 
     return (
         <div className="p-6">
@@ -69,11 +139,12 @@ const PresaleInfo: React.FC = () => {
             <div className="mb-6">
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-white font-semibold">Progress</span>
+                    <span className="text-white">{progress.toFixed(2)}%</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
                     <div
                         className="bg-green-400 h-full rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${calculateProgress()}%` }}
+                        style={{ width: `${progress}%` }}
                     ></div>
                 </div>
                 <div className="flex justify-between text-sm mt-2">
@@ -83,16 +154,31 @@ const PresaleInfo: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-                <InfoItem label="Token Price" value={`1 BNB = ${1 / parseFloat(presaleInfo.tokenPrice)} CAFI`} />
-                <InfoItem label="Total Raised" value={`${totalRaised} BNB`} />
-                <InfoItem label="Tokens Sold" value={`${tokensSold} CAFI`} />
+                <InfoItem
+                    label="Token Price"
+                    value={`1 BNB = ${(1 / parseFloat(presaleInfo.tokenPrice)).toLocaleString()} CAFI`}
+                />
+                <InfoItem
+                    label="Total Raised"
+                    value={`${parseFloat(totalRaised).toLocaleString()} BNB`}
+                />
+                <InfoItem
+                    label="Tokens Sold"
+                    value={`${parseFloat(tokensSold).toLocaleString()} CAFI`}
+                />
                 <InfoItem
                     label="Soft Cap Reached"
                     value={softCapReached ? 'Yes' : 'No'}
                     valueColor={softCapReached ? 'text-green-400' : 'text-red-400'}
                 />
-                <InfoItem label="Min Contribution" value={`${presaleInfo.minContribution} BNB`} />
-                <InfoItem label="Max Contribution" value={`${presaleInfo.maxContribution} BNB`} />
+                <InfoItem
+                    label="Min Contribution"
+                    value={`${presaleInfo.minContribution} BNB`}
+                />
+                <InfoItem
+                    label="Max Contribution"
+                    value={`${presaleInfo.maxContribution} BNB`}
+                />
             </div>
         </div>
     );

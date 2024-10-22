@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePresaleContract } from '../hooks/usePresaleContract';
 import { useAccount } from 'wagmi';
+import { logger } from '../utils/logger';
 
 interface InfoItemProps {
     label: string;
@@ -28,7 +29,7 @@ const PresaleForm: React.FC = () => {
         contribute,
         isInitialized,
         isMobileBrowser,
-        openWalletSelector  // Add this to the destructured values
+        openWalletSelector
     } = usePresaleContract();
 
     const [bnbAmount, setBnbAmount] = useState<string>('');
@@ -45,7 +46,7 @@ const PresaleForm: React.FC = () => {
     useEffect(() => {
         if (isInitialized) {
             fetchPresaleInfo();
-            const interval = setInterval(fetchPresaleInfo, 300000); // Refresh every 30 seconds
+            const interval = setInterval(fetchPresaleInfo, 300000);
             return () => clearInterval(interval);
         }
     }, [isInitialized]);
@@ -58,8 +59,12 @@ const PresaleForm: React.FC = () => {
 
     useEffect(() => {
         if (presaleInfo && userContribution) {
-            const tokenAllocation = parseFloat(userContribution) / parseFloat(presaleInfo.tokenPrice);
-            setUserTokenAllocation(tokenAllocation.toFixed(2));
+            try {
+                const tokenAllocation = parseFloat(userContribution) / parseFloat(presaleInfo.tokenPrice);
+                setUserTokenAllocation(tokenAllocation.toFixed(2));
+            } catch (error) {
+                logger.error('Error calculating token allocation:', error);
+            }
         }
     }, [presaleInfo, userContribution]);
 
@@ -74,7 +79,7 @@ const PresaleForm: React.FC = () => {
             setPresaleStatus(status);
             setTokensSold(sold);
         } catch (error) {
-            console.error("Error fetching presale info:", error);
+            logger.error("Error fetching presale info:", error);
             setError("Failed to fetch presale information. Please try again later.");
         }
     };
@@ -85,24 +90,23 @@ const PresaleForm: React.FC = () => {
                 const contribution = await getUserContribution(address);
                 setUserContribution(contribution);
             } catch (error) {
-                console.error("Error fetching user contribution:", error);
-                // Optionally set an error state here if you want to display it to the user
+                logger.error("Error fetching user contribution:", error);
+                // We don't set UI error here as it's not critical for user experience
             }
         }
     };
-
-    useEffect(() => {
-        if (address && isInitialized) {
-            fetchUserContribution();
-        }
-    }, [address, isInitialized]);
 
     const handleBnbAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setBnbAmount(value);
         if (presaleInfo && value !== '') {
-            const tokens = parseFloat(value) / parseFloat(presaleInfo.tokenPrice);
-            setCafiAmount(tokens.toFixed(2));
+            try {
+                const tokens = parseFloat(value) / parseFloat(presaleInfo.tokenPrice);
+                setCafiAmount(tokens.toFixed(2));
+            } catch (error) {
+                logger.error("Error calculating CAFI amount:", error);
+                setCafiAmount('');
+            }
         } else {
             setCafiAmount('');
         }
@@ -112,8 +116,13 @@ const PresaleForm: React.FC = () => {
         const value = e.target.value;
         setCafiAmount(value);
         if (presaleInfo && value !== '') {
-            const bnb = parseFloat(value) * parseFloat(presaleInfo.tokenPrice);
-            setBnbAmount(bnb.toFixed(8));
+            try {
+                const bnb = parseFloat(value) * parseFloat(presaleInfo.tokenPrice);
+                setBnbAmount(bnb.toFixed(8));
+            } catch (error) {
+                logger.error("Error calculating BNB amount:", error);
+                setBnbAmount('');
+            }
         } else {
             setBnbAmount('');
         }
@@ -123,8 +132,20 @@ const PresaleForm: React.FC = () => {
         setLoading(true);
         setError('');
         try {
+            // Input validation
             if (!bnbAmount || isNaN(parseFloat(bnbAmount))) {
                 throw new Error("Please enter a valid BNB amount.");
+            }
+
+            // Contribution limitations check
+            if (presaleInfo) {
+                const amount = parseFloat(bnbAmount);
+                if (amount < parseFloat(presaleInfo.minContribution)) {
+                    throw new Error(`Minimum contribution is ${presaleInfo.minContribution} BNB`);
+                }
+                if (amount > parseFloat(presaleInfo.maxContribution)) {
+                    throw new Error(`Maximum contribution is ${presaleInfo.maxContribution} BNB`);
+                }
             }
 
             const result = await contribute(bnbAmount);
@@ -142,7 +163,7 @@ const PresaleForm: React.FC = () => {
                 await fetchUserContribution();
             }
         } catch (error) {
-            console.error("Error contributing:", error);
+            logger.error("Error contributing:", error);
             if (error instanceof Error) {
                 setError(error.message);
             } else {

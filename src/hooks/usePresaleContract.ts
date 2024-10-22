@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import { CONTRACT_ABI } from '../constants/contractABI';
 import { CONTRACT_ADDRESS } from '../constants/contractConfig';
+import { logger } from '../utils/logger';
 
-const RPC_URL = "https://bsc-testnet-rpc.publicnode.com"; // BSC Testnet RPC URL
+const RPC_URL = "https://bsc-testnet-rpc.publicnode.com";
 
 declare global {
     interface Window {
@@ -14,7 +15,6 @@ declare global {
 const DEEP_LINKS = {
     metamask: 'https://metamask.app.link/dapp/',
     trustwallet: 'https://link.trustwallet.com/open_url?url=',
-    // Add more wallet deep links as needed
 };
 
 export const usePresaleContract = () => {
@@ -36,7 +36,7 @@ export const usePresaleContract = () => {
     }, []);
 
     const initializeContract = useCallback(async () => {
-        console.log("Initializing provider and contract...");
+        logger.log("Initializing provider and contract...");
         try {
             let newProvider;
             const ethereumProvider = getEthereumProvider();
@@ -55,9 +55,9 @@ export const usePresaleContract = () => {
             setContract(newContract);
 
             setIsInitialized(true);
-            console.log("Provider and contract initialized successfully.");
+            logger.log("Provider and contract initialized successfully.");
         } catch (error) {
-            console.error("Error initializing contract:", error);
+            logger.error("Error initializing contract:", error);
             initializationAttempts.current += 1;
             if (initializationAttempts.current < 3) {
                 setTimeout(initializeContract, 1000);
@@ -67,11 +67,9 @@ export const usePresaleContract = () => {
 
     const openWalletSelector = useCallback(() => {
         const currentUrl = window.location.href;
-        // Create a list of wallet options with deep links
         return {
             metamask: () => window.open(DEEP_LINKS.metamask + currentUrl),
             trustwallet: () => window.open(DEEP_LINKS.trustwallet + currentUrl),
-            // Add more wallet options as needed
         };
     }, []);
 
@@ -81,50 +79,83 @@ export const usePresaleContract = () => {
 
     const getPresaleInfo = useCallback(async () => {
         if (!isInitialized) {
-            console.log("Contract is not yet initialized. Waiting...");
+            logger.log("Contract is not yet initialized. Waiting...");
             return null;
         }
         if (!contract) {
-            console.error("Contract is not initialized");
+            logger.error("Contract is not initialized");
             return null;
         }
         try {
-            console.log("Calling poolInfo on contract...");
-            const poolInfo = await contract.poolInfo();
-            console.log("Raw poolInfo result:", poolInfo);
+            logger.log("Calling poolInfo on contract...");
 
-            // Check if poolInfo is an array (for contracts that return poolInfo as separate values)
+            // First check if the contract method exists
+            if (!contract.poolInfo) {
+                throw new Error("poolInfo method not found on contract");
+            }
+
+            const poolInfo = await contract.poolInfo();
+            logger.log("Raw poolInfo result:", poolInfo);
+
+            // Validate that we received data
+            if (!poolInfo) {
+                throw new Error("No data received from poolInfo");
+            }
+
+            // Check if poolInfo is an array
             if (Array.isArray(poolInfo)) {
+                // Validate array length
+                if (poolInfo.length < 10) {
+                    throw new Error("Incomplete pool information received");
+                }
+
                 return {
                     owner: poolInfo[0],
-                    startTime: poolInfo[1].toString(),
-                    endTime: poolInfo[2].toString(),
-                    tokenPrice: ethers.utils.formatUnits(poolInfo[3], 'ether'),
-                    softCap: ethers.utils.formatUnits(poolInfo[4], 'ether'),
-                    hardCap: ethers.utils.formatUnits(poolInfo[5], 'ether'),
-                    minContribution: ethers.utils.formatUnits(poolInfo[6], 'ether'),
-                    maxContribution: ethers.utils.formatUnits(poolInfo[7], 'ether'),
+                    startTime: poolInfo[1]?.toString() || '0',
+                    endTime: poolInfo[2]?.toString() || '0',
+                    tokenPrice: ethers.utils.formatUnits(poolInfo[3] || '0', 'ether'),
+                    softCap: ethers.utils.formatUnits(poolInfo[4] || '0', 'ether'),
+                    hardCap: ethers.utils.formatUnits(poolInfo[5] || '0', 'ether'),
+                    minContribution: ethers.utils.formatUnits(poolInfo[6] || '0', 'ether'),
+                    maxContribution: ethers.utils.formatUnits(poolInfo[7] || '0', 'ether'),
                     token: poolInfo[8],
-                    tokensDeposited: ethers.utils.formatUnits(poolInfo[9], 'ether')
+                    tokensDeposited: ethers.utils.formatUnits(poolInfo[9] || '0', 'ether')
                 };
             }
 
-            // If poolInfo is an object, return it directly
-            return {
-                owner: poolInfo.owner,
-                startTime: poolInfo.startTime.toString(),
-                endTime: poolInfo.endTime.toString(),
-                tokenPrice: ethers.utils.formatUnits(poolInfo.tokenPrice, 'ether'),
-                softCap: ethers.utils.formatUnits(poolInfo.softCap, 'ether'),
-                hardCap: ethers.utils.formatUnits(poolInfo.hardCap, 'ether'),
-                minContribution: ethers.utils.formatUnits(poolInfo.minContribution, 'ether'),
-                maxContribution: ethers.utils.formatUnits(poolInfo.maxContribution, 'ether'),
-                token: poolInfo.token,
-                tokensDeposited: ethers.utils.formatUnits(poolInfo.tokensDeposited, 'ether')
-            };
+            // If poolInfo is an object, validate required properties
+            if (typeof poolInfo === 'object' && poolInfo !== null) {
+                // Check for required properties
+                const requiredProps = [
+                    'owner', 'startTime', 'endTime', 'tokenPrice',
+                    'softCap', 'hardCap', 'minContribution', 'maxContribution',
+                    'token', 'tokensDeposited'
+                ];
+
+                const missingProps = requiredProps.filter(prop => !(prop in poolInfo));
+                if (missingProps.length > 0) {
+                    throw new Error(`Missing required properties: ${missingProps.join(', ')}`);
+                }
+
+                return {
+                    owner: poolInfo.owner,
+                    startTime: poolInfo.startTime?.toString() || '0',
+                    endTime: poolInfo.endTime?.toString() || '0',
+                    tokenPrice: ethers.utils.formatUnits(poolInfo.tokenPrice || '0', 'ether'),
+                    softCap: ethers.utils.formatUnits(poolInfo.softCap || '0', 'ether'),
+                    hardCap: ethers.utils.formatUnits(poolInfo.hardCap || '0', 'ether'),
+                    minContribution: ethers.utils.formatUnits(poolInfo.minContribution || '0', 'ether'),
+                    maxContribution: ethers.utils.formatUnits(poolInfo.maxContribution || '0', 'ether'),
+                    token: poolInfo.token,
+                    tokensDeposited: ethers.utils.formatUnits(poolInfo.tokensDeposited || '0', 'ether')
+                };
+            }
+
+            throw new Error("Invalid pool information format received");
         } catch (error) {
-            console.error("Error in getPresaleInfo:", error);
-            throw error;
+            logger.error("Error in getPresaleInfo:", error);
+            // Return null instead of throwing to allow graceful handling in UI
+            return null;
         }
     }, [contract, isInitialized]);
 
@@ -134,7 +165,7 @@ export const usePresaleContract = () => {
             const sold = await contract.tokensSold();
             return ethers.utils.formatUnits(sold, 'ether');
         } catch (error) {
-            console.error("Error in getTokensSold:", error);
+            logger.error("Error in getTokensSold:", error);
             throw error;
         }
     }, [contract]);
@@ -146,17 +177,12 @@ export const usePresaleContract = () => {
             const currentTime = Math.floor(Date.now() / 1000);
             const finalized = await contract.finalized();
 
-            if (finalized) {
-                return "Ended";
-            } else if (currentTime < info.startTime.toNumber()) {
-                return "Not started";
-            } else if (currentTime > info.endTime.toNumber()) {
-                return "Ended";
-            } else {
-                return "Active";
-            }
+            if (finalized) return "Ended";
+            if (currentTime < info.startTime.toNumber()) return "Not started";
+            if (currentTime > info.endTime.toNumber()) return "Ended";
+            return "Active";
         } catch (error) {
-            console.error("Error in getPresaleStatus:", error);
+            logger.error("Error in getPresaleStatus:", error);
             throw error;
         }
     }, [contract]);
@@ -166,7 +192,7 @@ export const usePresaleContract = () => {
         try {
             return await contract.softCapReached();
         } catch (error) {
-            console.error("Error in getSoftCapReached:", error);
+            logger.error("Error in getSoftCapReached:", error);
             throw error;
         }
     }, [contract]);
@@ -177,7 +203,7 @@ export const usePresaleContract = () => {
             const totalRaised = await contract.totalRaised();
             return ethers.utils.formatUnits(totalRaised, 'ether');
         } catch (error) {
-            console.error("Error in getTotalRaised:", error);
+            logger.error("Error in getTotalRaised:", error);
             throw error;
         }
     }, [contract]);
@@ -190,7 +216,7 @@ export const usePresaleContract = () => {
                 const correctNetwork = await provider?.getNetwork();
                 return network.chainId === correctNetwork?.chainId;
             } catch (error) {
-                console.error("Error checking network:", error);
+                logger.error("Error checking network:", error);
                 return false;
             }
         }
@@ -207,7 +233,7 @@ export const usePresaleContract = () => {
                 });
                 return true;
             } catch (error) {
-                console.error("Failed to switch network:", error);
+                logger.error("Failed to switch network:", error);
                 return false;
             }
         }
@@ -219,14 +245,12 @@ export const usePresaleContract = () => {
 
         if (!ethereumProvider) {
             if (isMobileBrowser()) {
-                // Instead of throwing an error, return object indicating wallet selection is needed
                 return {
                     needsWallet: true,
                     walletSelector: openWalletSelector()
                 };
-            } else {
-                throw new Error("No Ethereum wallet detected. Please install MetaMask or use a Web3-enabled browser.");
             }
+            throw new Error("No Ethereum wallet detected. Please install MetaMask or use a Web3-enabled browser.");
         }
 
         try {
@@ -252,12 +276,12 @@ export const usePresaleContract = () => {
 
             const tx = await contractWithSigner.contribute({
                 value: ethers.utils.parseEther(amount),
-                gasLimit: 300000 // Add explicit gas limit for mobile wallets
+                gasLimit: 300000
             });
             await tx.wait();
             return { success: true };
         } catch (error) {
-            console.error("Error contributing:", error);
+            logger.error("Error contributing:", error);
             throw error;
         }
     }, [contract, isCorrectNetwork, switchToCorrectNetwork, getEthereumProvider, isMobileBrowser, openWalletSelector]);
@@ -268,7 +292,7 @@ export const usePresaleContract = () => {
             const contribution = await contract.contributions(userAddress);
             return ethers.utils.formatEther(contribution);
         } catch (error) {
-            console.error("Error getting user contribution:", error);
+            logger.error("Error getting user contribution:", error);
             throw error;
         }
     }, [contract]);
@@ -302,8 +326,6 @@ export const usePresaleContract = () => {
         await tx.wait();
     }, [contract, provider]);
 
-    // Implement other functions (claimTokens, withdrawContribution, etc.) similarly...
-
     return {
         getPresaleInfo,
         getTokensSold,
@@ -321,6 +343,5 @@ export const usePresaleContract = () => {
         withdrawContribution,
         isMobileBrowser,
         openWalletSelector,
-        // Include other functions here...
     };
 };
